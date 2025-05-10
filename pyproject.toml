@@ -1,0 +1,23 @@
+[project]
+name = "raid"
+version = "0.1.0"
+description = "Project Raid v0.1 - Core Proof of Concept"
+authors = [{ name = "Codegass", email = "wchweichenhao@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = [
+    "docker",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv]
+managed = true 
