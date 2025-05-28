@@ -168,7 +168,7 @@ class DispatchToSubAgentTool(MetaTool):
                     sub_agent_profile,
                     environment={
                         "RAID_LLM_PROVIDER": self.config.llm_backend.provider,
-                        "OPENAI_API_KEY_N0MAIL": self.config.llm_backend.api_key or "",
+                        "OPENAI_API_KEY": self.config.llm_backend.api_key or "",
                         "RAID_REDIS_HOST": "host.docker.internal",
                         "RAID_REDIS_PORT": str(self.config.message_queue.redis_port),
                     }
@@ -498,7 +498,7 @@ class CreateCollaborativeSubAgentGroupTool(MetaTool):
                         profile.name,
                         environment={
                             "RAID_LLM_PROVIDER": self.config.llm_backend.provider,
-                            "OPENAI_API_KEY_N0MAIL": self.config.llm_backend.api_key or "",
+                            "OPENAI_API_KEY": self.config.llm_backend.api_key or "",
                             "RAID_REDIS_HOST": "host.docker.internal",
                             "RAID_REDIS_PORT": str(self.config.message_queue.redis_port),
                             "RAID_COLLABORATION_GROUP_ID": collab_group.group_id,

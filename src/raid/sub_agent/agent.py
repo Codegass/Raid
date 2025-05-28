@@ -11,6 +11,10 @@ from ..llm_backend.interface import LLMBackend, LLMMessage
 from ..llm_backend.factory import create_llm_backend
 from ..tools.base import Tool, ToolRegistry
 from ..tools.calculator import CalculatorTool
+from ..tools.websearch import WebSearchTool
+from ..tools.python_executor import RunPythonCodeTool
+from ..tools.file_operations import CreateFileTool, ReadFileTool, ListFilesTool, DeleteFileTool
+from ..tools.bash_executor import RunBashCommandTool, LimitedNetworkTool
 from ..message_queue.models import TaskMessage, ResultMessage
 from ..message_queue.redis_mq import RedisMQ
 from ..config.settings import LLMBackendConfig, MessageQueueConfig
@@ -66,6 +70,14 @@ class SubAgent:
         # Map tool names to tool classes
         tool_classes = {
             "calculator": CalculatorTool,
+            "websearch": WebSearchTool,
+            "run_python_code": RunPythonCodeTool,
+            "create_file": CreateFileTool,
+            "read_file": ReadFileTool,
+            "list_files": ListFilesTool,
+            "delete_file": DeleteFileTool,
+            "run_bash_command": RunBashCommandTool,
+            "network_request": LimitedNetworkTool,
         }
         
         for tool_name in self.profile.tools:

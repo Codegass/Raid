@@ -71,7 +71,7 @@ class RoleTemplateRegistry:
         self.register_role(SubAgentRole(
             role_name="data_analyst",
             description="Specialized Sub-Agent for data analysis and calculations",
-            tools=["calculator"],
+            tools=["calculator", "run_python_code", "create_file", "read_file", "list_files"],
             system_prompt_template="""You are a specialized Data Analyst Sub-Agent focused on {specialization}.
 
 Task Context: {task_description}
@@ -97,7 +97,7 @@ Provide detailed analysis and explain your reasoning.""",
         self.register_role(SubAgentRole(
             role_name="financial_analyst",
             description="Specialized Sub-Agent for financial calculations and analysis",
-            tools=["calculator"],
+            tools=["calculator", "run_python_code", "websearch", "create_file", "read_file"],
             system_prompt_template="""You are a specialized Financial Analyst Sub-Agent focused on {specialization}.
 
 Task Context: {task_description}
@@ -124,7 +124,7 @@ Present results in clear financial terms with appropriate context.""",
         self.register_role(SubAgentRole(
             role_name="research_analyst",
             description="Specialized Sub-Agent for research and information analysis",
-            tools=["calculator"],
+            tools=["websearch", "run_python_code", "create_file", "read_file", "list_files"],
             system_prompt_template="""You are a specialized Research Analyst Sub-Agent focused on {specialization}.
 
 Task Context: {task_description}
@@ -151,7 +151,7 @@ Structure your findings clearly with supporting evidence.""",
         self.register_role(SubAgentRole(
             role_name="problem_solver",
             description="Specialized Sub-Agent for general problem-solving tasks",
-            tools=["calculator"],
+            tools=["calculator", "run_python_code", "websearch", "create_file", "read_file", "run_bash_command"],
             system_prompt_template="""You are a specialized Problem Solver Sub-Agent focused on {specialization}.
 
 Task Context: {task_description}
@@ -178,7 +178,7 @@ Provide clear, step-by-step solutions with reasoning.""",
         self.register_role(SubAgentRole(
             role_name="quality_analyst",
             description="Specialized Sub-Agent for quality assurance and validation",
-            tools=["calculator"],
+            tools=["calculator", "run_python_code", "read_file", "list_files"],
             system_prompt_template="""You are a specialized Quality Analyst Sub-Agent focused on {specialization}.
 
 Task Context: {task_description}

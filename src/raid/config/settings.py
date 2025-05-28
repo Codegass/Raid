@@ -38,7 +38,7 @@ class RaidConfig(BaseModel):
         if llm_provider == "openai":
             llm_config = LLMBackendConfig(
                 provider="openai",
-                api_key=os.getenv("OPENAI_API_KEY_N0MAIL"),
+                api_key=os.getenv("OPENAI_API_KEY"),
                 model=os.getenv("RAID_OPENAI_MODEL", "gpt-4o")
             )
         elif llm_provider == "ollama":
