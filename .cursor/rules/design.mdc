@@ -1,0 +1,200 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Okay, this is a fantastic and crucial clarification! If the **Control Agent is also LLM-based and defaults to a ReAct mode**, this profoundly shapes its architecture and interaction patterns. Its context management becomes absolutely central to its functioning, even more so than for individual Sub-Agents.
+
+Here's how this new understanding reframes the project and the phased approach:
+
+**Core Implications of an LLM-based ReAct Control Agent:**
+
+1.  **Continuous ReAct Cycle:** The Control Agent doesn't just switch to ReAct on failure; its entire operation *is* a ReAct (Thought -> Action -> Observation) loop to fulfill the user's overarching goal.
+    * **Thought:** The Control Agent's LLM analyzes the current goal, available Sub-Agent profiles (and their tools), conversation history, and its scratchpad to decide the next best step.
+    * **Action:** This will almost always be the Control Agent's LLM deciding to use one of *its own* "meta-tools." These meta-tools are Python functions that implement the Control Agent's capabilities.
+    * **Observation:** The result of executing that meta-tool.
+
+2.  **Control Agent's "Meta-Tools":** These are not the same tools Sub-Agents use. The Control Agent's tools are for orchestration and framework interaction. Examples:
+    * `plan_next_sub_task(overall_goal: str, history: str, available_sub_agent_profiles: list) -> dict`: An LLM-heavy tool where the Control Agent might use its LLM (or a dedicated planning LLM call) to break down a goal into a specific sub-task prompt for a specific Sub-Agent type. Returns a structured sub-task.
+    * `dispatch_to_sub_agent(sub_agent_profile: str, sub_task_prompt: str, required_sub_agent_tools: list) -> str`: Sends the sub-task to the appropriate Sub-Agent via MQ and returns a `correlation_id` or waits for a result. (This tool calls the Docker Orchestrator via REST if a new Sub-Agent instance is needed).
+    * `query_sub_agent_status(correlation_id: str) -> dict`: Checks the status of an ongoing Sub-Agent task.
+    * `analyze_sub_agent_response(sub_agent_response: dict, original_sub_task_prompt: str) -> str`: An LLM-heavy tool to interpret the Sub-Agent's output in the context of the sub-task and overall goal, generating an "observation" for the main ReAct loop.
+    * `archive_interaction(thought: str, action: str, observation: str, metadata: dict)`: Saves current ReAct cycle step.
+    * `retrieve_from_archive(query: str, filter: dict) -> list`: Implements RAG for the Control Agent.
+    * `request_user_clarification(question: str) -> str`: Pauses and asks the end-user for input.
+    * `conclude_task_success(final_summary: str)`: Ends the task successfully.
+    * `conclude_task_failure(reason: str, error_details: dict)`: Ends the task with failure.
+
+3.  **Context is King (for Control Agent LLM):**
+    * **Scratchpad/Working Memory:** The history of the Control Agent's *own* T-A-O cycles for the current user request. This is the primary input to its "Thought" process.
+    * **Long-Term Memory (Archive/RAG):** Access to past tasks, detailed tool documentation for Sub-Agents, best practices, etc., retrieved via a meta-tool.
+    * **User Interaction History:** Any clarifications or feedback from the user.
+    * **Sub-Agent Capability Registry:** Knowledge of what Sub-Agents exist and what tools *they* have.
+    * **Token Limit Management:** This will be the biggest challenge. The Control Agent's context can grow very large. Strategies like summarizing previous T-A-O cycles, using RAG instead of stuffing everything into the prompt, and carefully curating what goes into the scratchpad will be essential.
+
+4.  **Bootstrap & Initial Goal:** The Control Agent needs an initial prompt/goal from the user to kick off its ReAct loop.
+
+Let's adjust the phases again. We'll still need to build the Sub-Agent capabilities first (Phase 1 from the *previous LLM-centric plan* is a good starting point for that). Then, we introduce the LLM-based Control Agent.
+
+---
+
+**Project Raid: Design Document (LLM Control Agent with Default ReAct)**
+
+**Vision:** Project Raid will feature an LLM-powered Control Agent acting as the primary reasoner and orchestrator. It operates in a continuous ReAct cycle, utilizing its own set of meta-tools to manage LLM-based Sub-Agents (running in Docker) to fulfill complex user requests. Context management for the Control Agent's LLM is a core design focus.
+
+---
+
+**Phase 1: LLM Sub-Agent Foundation & Scripted Trigger**
+
+* **Goal:** Establish a functional LLM-based Sub-Agent capable of using a tool, running in Docker, and communicating via MQ. It will be triggered by a *simple, scripted (non-LLM) utility* for this phase to isolate Sub-Agent development.
+* **Key Features/Components:**
+    * **Test Script Utility (not the Control Agent yet):**
+        * Sends a predefined task prompt (including LLM backend choice: OpenAI/Ollama, model, and tools to activate for the Sub-Agent) to a specific MQ task queue.
+        * Listens on a result MQ queue for the Sub-Agent's output.
+    * **Docker Orchestrator (v0.1_llm_co):**
+        * Can be a script for now. Receives basic instructions (e.g., "ensure SubAgentProfileX is running and listening on QueueY").
+        * Manages secure credential/endpoint injection for the Sub-Agent's LLM.
+    * **Sub-Agent Auto-Configurator (v0.1_llm_sac):**
+        * YAML definition for a Sub-Agent profile (LLM backend, model, list of its tools).
+        * Generates Dockerfile, tool registry JSON for the Sub-Agent.
+    * **LLM-based Sub-Agent (v0.1_llm_sa):**
+        * Listens on MQ for task prompt.
+        * Initializes its LLM (OpenAI/Ollama) and its registered tools (e.g., `calculator`, `simple_web_search`).
+        * Processes prompt using its LLM and tools (may involve internal LLM thought/tool-call cycles for its given sub-task).
+        * Publishes final result/error to MQ.
+    * **LLM Backend Interface (v0.1_llm_bi):** Abstraction for OpenAI/Ollama calls within the Sub-Agent.
+    * **Message Queues (v0.1_mq):** `sub_agent_task_queue_profile_X`, `sub_agent_result_queue_profile_X`.
+* **Deliverable:** The Test Script can successfully send a task to an LLM Sub-Agent (e.g., "CalculatorAgent") via MQ, the Sub-Agent executes using its LLM and tool, and the script receives the result. Demonstrate with both OpenAI and an Ollama model.
+* **Experimentation:** Sub-Agent tool definition, LLM prompting for Sub-Agent tool use, MQ message formats, basic Auto-Config.
+* **Rationale:** Validate the core LLM Sub-Agent functionality, including LLM backend switching and tool usage, *before* introducing the complexity of the LLM Control Agent.
+
+---
+
+**Phase 2: Introducing the LLM-based Control Agent (Core ReAct & Single Sub-Agent Orchestration)**
+
+* **Goal:** Implement the LLM-based Control Agent (CA) operating in ReAct mode. It will orchestrate the LLM Sub-Agent profile developed in Phase 1 to achieve a simple user-provided goal.
+* **Key Features/Components:**
+    * **LLM-based Control Agent (v0.2_llm_ca):**
+        * **Core LLM & ReAct Engine:**
+            * Python framework manages the ReAct loop (Thought -> Action -> Observation).
+            * Uses an LLM (OpenAI/Ollama, configurable via `LLM Backend Interface`).
+            * **System Prompt:** Defines its role (e.g., "You are RaidControl, a master AI orchestrator. Your goal is to achieve the user's request by intelligently delegating tasks to specialized Sub-Agents. Operate using a Thought-Action-Observation cycle. For Action, choose one of your available meta-tools.").
+            * **Context/Scratchpad (In-memory v1):** Stores user request, T-A-O history for the current task.
+        * **Meta-Tools (v0.1_ca_mt):**
+            * `dispatch_to_sub_agent(sub_agent_profile: str, sub_task_prompt: str) -> str`: Sends task to specified Sub-Agent profile's MQ queue, waits for result on a CA-specific result queue (using correlation IDs). For now, `sub_agent_profile` might be semi-hardcoded or chosen very simply by the CA's LLM. *This tool will directly call the Docker Orchestrator script if the agent isn't running.*
+            * `conclude_task_success(final_summary: str) -> str`: "Task completed successfully. Output: [summary]."
+            * `conclude_task_failure(reason: str) -> str`: "Task failed. Reason: [reason]."
+        * **Input:** Receives an initial user goal (e.g., "Calculate 5 plus 5 using the CalculatorAgent.").
+    * **Docker Orchestrator (v0.2_llm_co):**
+        * Still a script, but now callable by the CA's `dispatch_to_sub_agent` meta-tool to ensure the required Sub-Agent Docker container (from Phase 1 profile) is running and configured.
+    * **Sub-Agent Auto-Configurator (v0.2_llm_sac):** As in Phase 1, defines the Sub-Agent profile(s).
+    * **LLM-based Sub-Agent (v0.2_llm_sa):** Same as Phase 1 (e.g., "CalculatorAgent").
+    * **LLM Backend Interface (v0.2_llm_bi):** Now used by *both* CA and SA.
+    * **Message Queues (v0.2_mq):** `calculator_agent_task_q`, `control_agent_results_q` (CA listens here for SA responses).
+* **Deliverable:**
+    1.  User provides a simple goal to the LLM Control Agent.
+    2.  CA's LLM "Thinks," then "Acts" by calling its `dispatch_to_sub_agent` meta-tool to task the CalculatorAgent.
+    3.  CalculatorAgent processes and returns result to CA's result queue.
+    4.  CA's `dispatch_to_sub_agent` meta-tool returns this as "Observation."
+    5.  CA's LLM "Thinks" (e.g., "Result received, task complete"), then "Acts" by calling `conclude_task_success`.
+    6.  The CA's T-A-O log is visible.
+* **Experimentation:**
+    * Control Agent's system prompt and ReAct logic.
+    * Design and implementation of the first CA meta-tools.
+    * CA's LLM context management (simple in-memory scratchpad). How to present history and available tools to the CA's LLM.
+    * Interaction between CA's meta-tools, MQ, and the Docker Orchestrator script.
+* **Rationale:** Focus on the CA's own LLM-driven ReAct cycle and its ability to use a meta-tool to command a single, known Sub-Agent.
+
+---
+
+**Phase 3: Multi-Profile Sub-Agents, Expanded CA Meta-Tools, Formal Orchestrator API**
+
+* **Goal:** CA orchestrates tasks involving *different types* of Sub-Agent profiles. Expand CA's meta-tools for better planning and Sub-Agent discovery. Docker Orchestrator becomes a formal REST API service.
+* **Key Features/Components:**
+    * **LLM-based Control Agent (v0.3_llm_ca):**
+        * **ReAct & Context:** Scratchpad becomes more structured, perhaps a `TaskContext` object per user request, serialized/summarized for the LLM prompt.
+        * **Meta-Tools (v0.2_ca_mt):**
+            * `discover_sub_agent_profiles() -> list[dict]`: Returns a list of available Sub-Agent profiles and their capabilities/tools (sourced from `Sub-Agent Auto-Configurator` definitions). CA's LLM uses this to choose the right profile.
+            * `plan_sub_task(current_goal_segment: str, overall_task_history: str, available_profiles: list[dict]) -> dict`: A meta-tool that might itself make an LLM call to formulate the precise prompt and select tools for a chosen Sub-Agent profile. Returns `{profile_to_use: "X", sub_task_prompt: "Y", required_sa_tools: ["Z"]}`.
+            * `dispatch_to_sub_agent`: Now uses the output of `plan_sub_task` and calls the Docker Orchestrator's REST API.
+    * **Docker Orchestrator (v0.3_llm_co):**
+        * Evolves into a REST API service (e.g., FastAPI/Flask).
+        * Endpoints: `POST /agents` (to create/run Sub-Agent from profile spec), `GET /agents/{id}/status`, `DELETE /agents/{id}`.
+        * Integrates with `Sub-Agent Auto-Configurator` to build/configure images.
+    * **Sub-Agent Auto-Configurator (v0.3_llm_sac):**
+        * Defines multiple distinct Sub-Agent profiles (e.g., "CalculatorAgent_v1", "WebSearchAgent_v1", "SummarizerAgent_v1"), each with their specific LLM configs and toolsets. This data is exposed via CA's `discover_sub_agent_profiles` meta-tool.
+    * **LLM-based Sub-Agents (v0.3_llm_sa):** Multiple profiles available, each listening on dedicated MQ task queues or a general queue with routing keys.
+* **Deliverable:**
+    1.  User gives CA a goal like: "Search for recent news about AI advancements and then summarize the key points."
+    2.  CA's ReAct cycle:
+        * Thinks, uses `discover_sub_agent_profiles`.
+        * Thinks, uses `plan_sub_task` to decide to use "WebSearchAgent_v1". Action: `dispatch_to_sub_agent` (for search). Observation: Search results.
+        * Thinks, uses `plan_sub_task` to decide to use "SummarizerAgent_v1". Action: `dispatch_to_sub_agent` (for summarization, feeding in search results). Observation: Summary.
+        * Thinks. Action: `conclude_task_success`.
+* **Experimentation:**
+    * CA LLM's ability to use `discover_sub_agent_profiles` and `plan_sub_task` to break down goals and select appropriate Sub-Agents.
+    * Robustness of Docker Orchestrator REST API.
+    * Context window management for CA's LLM as history grows.
+* **Rationale:** Enable the CA to handle more complex, multi-stage tasks by dynamically choosing and tasking different specialized Sub-Agents.
+
+---
+
+**Phase 4: Control Agent Long-Term Memory (Archival & RAG), External API Proxy Meta-Tool**
+
+* **Goal:** Equip the CA's LLM with long-term memory via context archival and RAG. Enable CA to securely proxy external API calls for Sub-Agents that need them.
+* **Key Features/Components:**
+    * **LLM-based Control Agent (v0.4_llm_ca):**
+        * **Context Management & RAG:**
+            * Meta-Tool: `archive_current_task_context(task_id: str, status: str, full_scratchpad: str)`: Saves CA's `TaskContext` and ReAct history to a persistent store (NoSQL DB or Vector DB).
+            * Meta-Tool: `retrieve_archived_context(natural_language_query: str) -> list[str]`: Queries the archive (e.g., vector search on past scratchpads/summaries) and returns relevant snippets.
+            * CA's LLM uses `retrieve_archived_context` during its "Thought" step if it deems necessary (e.g., "Have I solved a similar problem before? What were the steps?"). Retrieved info augments its current prompt.
+        * **Meta-Tools (v0.3_ca_mt):**
+            * New Meta-Tool: `proxy_external_api(api_identifier: str, method: str, parameters: dict, requires_auth: bool) -> dict`:
+                * The CA's LLM decides to call this if a Sub-Agent's task implies needing external data that requires authenticated access or centralized management.
+                * The Python code for this meta-tool handles the actual external API call, using securely stored credentials (managed by the CA's environment, not the LLM).
+                * This is *not* directly called by Sub-Agents. A Sub-Agent indicates a *need* for such data in its response (e.g., "I need the current stock price for AAPL to continue"). The CA's LLM observes this, then decides to use *its own* `proxy_external_api` meta-tool. The result is then fed back to the relevant Sub-Agent in a subsequent `dispatch_to_sub_agent` action.
+* **LLM-based Sub-Agents (v0.4_llm_sa):**
+    * When a Sub-Agent reaches a point where it needs external data it cannot fetch itself (e.g., due to lack of tools or auth), its LLM is prompted to respond in a structured way indicating this need (e.g., `{ "status": "needs_external_data", "request": { "api": "stock_price", "params": {"ticker": "AAPL"} } }`).
+* **Deliverable:**
+    1.  CA handles a task. Later, for a new, similar task, it uses `retrieve_archived_context` to recall aspects of the previous solution, influencing its ReAct cycle.
+    2.  User asks CA for "latest financial news for company X and its current stock price."
+        * CA dispatches to "WebSearchAgent" for news. Gets news.
+        * CA's LLM sees stock price is also needed. "Thinks": This requires a proxied API call. "Action": `proxy_external_api(api_identifier="stock_service", parameters={"ticker":"X"})`. "Observation": Stock price data.
+        * CA then combines news and stock price for the final response.
+* **Experimentation:**
+    * RAG pipeline for CA (vector DB, embedding strategy, retrieval accuracy).
+    * Prompt engineering for CA's LLM to effectively use RAG and decide when to use the `proxy_external_api` meta-tool.
+    * Secure credential management for the CA's `proxy_external_api` meta-tool.
+    * Structured format for Sub-Agents to request proxied calls.
+* **Rationale:** Significantly enhance CA's intelligence with memory and allow safe access to external world data.
+
+---
+
+**Phase 5: Observability, Scalability, Security, and Polish (LLM CA Focus)**
+
+* **Goal:** Production-hardening with a strong focus on the LLM Control Agent's performance, reliability, cost, and security.
+* **Key LLM CA-Specific Considerations:**
+    * **Observability:** Detailed tracing of CA's ReAct cycles, meta-tool calls, prompts to its LLM, token usage for CA's LLM, latency of CA's "Thoughts." Visualizing the CA's decision tree.
+    * **Scalability:**
+        * Performance of CA's LLM (especially if using local Ollama for CA).
+        * Rate limit handling for CA's LLM API calls.
+        * Efficiency of RAG retrieval at scale.
+        * Potential for the CA's ReAct loop itself to become a bottleneck if it involves many synchronous meta-tool calls. (Consider async meta-tools if needed, though this adds complexity).
+    * **Security:**
+        * **CA Prompt Injection:** If user input directly forms a large part of the CA LLM's main prompt, it could be vulnerable. Sanitize or structure user input.
+        * **Meta-Tool Security:** Ensuring meta-tools have appropriate permissions and don't expose sensitive system internals if the CA's LLM is tricked into misusing them.
+        * Auditing CA's decisions.
+    * **Context Window Management for CA:** Advanced summarization techniques for the scratchpad, intelligent pruning of history, optimizing RAG to provide concise, relevant context.
+    * **Cost Optimization:** Strategies to reduce token consumption by CA's LLM (e.g., using smaller models for certain "Thoughts" or meta-tool planning, prompt optimization).
+    * **Failure Resilience of CA:** What happens if the CA's LLM repeatedly fails to make progress or gets stuck in a loop? Max retry counts for ReAct steps, human-in-the-loop escalation points.
+* **Deliverables:** A robust, observable, and reasonably secure LLM-driven Control Agent managing a fleet of LLM Sub-Agents. Comprehensive documentation on its operation, prompt strategies, and limitations.
+* **Rationale:** Prepare the sophisticated LLM Control Agent for more demanding and potentially real-world scenarios.
+
+
+**3. Cross-Cutting Concerns (To be considered throughout all phases)**
+
+* **Configuration Management:** How are configurations for Control Agent, Docker Orchestrator, and MQ managed and versioned?
+* **Error Handling & Resilience:** Consistent error reporting, retry mechanisms (where appropriate).
+* **Code Quality & Testing:** Linters, formatters, unit tests, integration tests.
+* **Documentation:** Keep documentation updated with each phase for design decisions, APIs, setup, and usage.
+

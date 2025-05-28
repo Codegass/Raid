@@ -1,23 +1,46 @@
 [project]
 name = "raid"
 version = "0.1.0"
-description = "Project Raid v0.1 - Core Proof of Concept"
-authors = [{ name = "Codegass", email = "wchweichenhao@gmail.com" }]
-requires-python = ">=3.10"
+description = "LLM-based multi-agent orchestration system"
+authors = [
+    {name = "Codegass", email = "wchweichenhao@gmail.com"}
+]
 dependencies = [
-    "docker",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "docker>=6.0.0",
+    "redis>=4.5.0",
+    "openai>=1.0.0",
+    "requests>=2.28.0",
+    "asyncio-mqtt>=0.13.0",
+    "click>=8.0.0",
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.rye]
-managed = true
-dev-dependencies = []
+[tool.black]
+line-length = 88
+target-version = ['py39']
 
-[tool.hatch.metadata]
-allow-direct-references = true
+[tool.ruff]
+target-version = "py39"
+line-length = 88
 
-[tool.uv]
-managed = true 
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
