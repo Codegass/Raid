@@ -32,6 +32,7 @@ Project Raid implements a hierarchical multi-agent architecture where a **Contro
 - 🔄 **Async Message Queues**: Reliable Redis-based communication with pub/sub support
 - 🎯 **Configurable Limits**: Control resource usage with agent and collaboration limits
 - 🛠️ **Extensible Tools**: Plugin-based tool system for Sub-Agents
+- ✨ **Enhanced Stability & Reliability**: Increased timeouts for long tasks and robust Docker orchestration ensure agents run dependably on the latest code.
 - 🔒 **Security-First Design**: Strict collaboration restrictions and message validation
 
 ## Advanced Tool System
@@ -49,10 +50,13 @@ Project Raid implements a hierarchical multi-agent architecture where a **Contro
   - Data analysis with pandas, numpy, matplotlib
   - Statistical computing and visualization
   - Sandboxed environment with security restrictions
-- **`run_bash_command`**: Safe shell command execution (Docker only)
-  - File processing and system operations
-  - Development tools (git, gcc, python, npm)
-  - Command whitelist and security validation
+- **`run_bash_command`**: Enhanced secure shell command execution (Docker only)
+  - **NEW: `output_log_file` Parameter**: Redirects long outputs (build logs, etc.) to files, preventing context overflows
+  - **Intelligence-First Design**: Agents automatically use log files + grep/tail for analyzing large command outputs
+  - **Enhanced Security**: Whitelist of 50+ allowed commands, forbidden pattern detection, command chaining prevention
+  - **Development Tools**: git, gcc, python, npm, maven, gradle, and package managers
+  - **Working Directory Management**: Fixed path resolution for reliable command execution
+  - **Timeout Management**: Configurable timeouts (30s-300s) with async execution
 
 #### **File Management**
 - **`create_file`**: Create files with content
@@ -60,6 +64,14 @@ Project Raid implements a hierarchical multi-agent architecture where a **Contro
 - **`list_files`**: List workspace files
 - **`delete_file`**: Remove files from workspace
 - **Workspace isolation**: All file operations in `/tmp/raid_workspace`
+
+#### **System Notifications**
+- **`notification_user`**: Cross-platform system notifications
+  - **Windows**: PowerShell toast notifications
+  - **macOS**: osascript display notifications
+  - **Linux**: notify-send, zenity, or kdialog fallbacks
+  - **Urgency levels**: low, normal, critical
+  - **Non-blocking**: Async execution without system delays
 
 #### **Network Operations**
 - **`network_request`**: Limited HTTP GET requests
@@ -93,7 +105,7 @@ Project Raid implements a hierarchical multi-agent architecture where a **Contro
 ### Prerequisites
 
 - Python 3.9+
-- Docker & Docker Compose
+- Docker & Docker Compose  
 - Redis server
 - OpenAI API key OR Ollama installation
 - (Optional) SerpAPI key for enhanced web search
@@ -106,7 +118,7 @@ Project Raid implements a hierarchical multi-agent architecture where a **Contro
    cd Raid
    ```
 
-2. **Install dependencies**
+2. **Install dependencies with CLI support**
    ```bash
    pip install -e .
    ```
@@ -126,7 +138,34 @@ Project Raid implements a hierarchical multi-agent architecture where a **Contro
    redis-server
    ```
 
-### Basic Usage
+### CLI Usage (Recommended)
+
+**Raid includes a comprehensive CLI for intelligent task processing and system management:**
+
+```bash
+# Check CLI help
+raid --help
+
+# RECOMMENDED: Control Agent processing with intelligent orchestration
+raid control process "Calculate ROI for $50k investment at 8% over 5 years"
+raid control process "Setup React development environment" --show-thinking
+raid control interactive  # Interactive wizard
+
+# Agent management
+raid agents list          # List active agents
+raid agents stats         # Detailed statistics
+raid agents health        # Health status
+
+# System monitoring
+raid status              # Quick system overview
+raid system health       # Full health check
+
+# Profile management
+raid profiles list       # Available profiles
+raid profiles show setup_agent  # Show profile details
+```
+
+### Test Scripts Usage
 
 1. **Test Sub-Agent functionality**
    ```bash
@@ -151,6 +190,11 @@ Project Raid implements a hierarchical multi-agent architecture where a **Contro
 5. **Test advanced tools functionality**
    ```bash
    python scripts/test_advanced_tools.py
+   ```
+
+6. **Test Setup Agent capabilities**
+   ```bash
+   python scripts/test_setup_agent_full.py
    ```
 
 ## Configuration
@@ -196,6 +240,151 @@ docker_config:
   base_image: python:3.9-slim
   working_dir: /app
 ```
+
+## Command Line Interface (CLI)
+
+Raid includes a comprehensive CLI for system management and intelligent task processing:
+
+### Installation & Basic Usage
+```bash
+# Install with CLI support
+pip install -e .
+
+# Use the CLI
+raid --help
+```
+
+### Key CLI Commands
+
+#### **Control Agent Processing (RECOMMENDED)**
+- `raid control process "<goal>"` - Process natural language goals with ReAct reasoning
+- `raid control process "<goal>" --show-thinking` - Show Control Agent thinking process
+- `raid control interactive` - Interactive goal creation wizard
+- `raid control health` - Check Control Agent health and capabilities
+- `raid control capabilities` - Show available meta-tools and features
+
+#### **Agent Management**
+- `raid agents list` - List all active agents with status
+- `raid agents stats` - Detailed statistics and relationships
+- `raid agents create <profile>` - Create new agent from profile
+- `raid agents stop <agent-name>` - Stop specific agent
+- `raid agents cleanup` - Remove idle/stale agents
+- `raid agents logs <agent-name>` - View agent container logs
+- `raid agents health` - Check health status of all agents
+
+#### **Direct Sub-Agent Dispatch (Alternative)**
+- `raid task run <profile> "<prompt>"` - Dispatch task to specific agent profile
+- `raid task interactive` - Interactive task creation wizard
+- `raid task collaborative <profile> "<task>" --count N` - Multi-agent collaborative tasks
+- `raid task templates` - Show available task templates
+
+#### **System Monitoring**
+- `raid status` - Quick system status overview
+- `raid system stats` - Comprehensive system statistics
+- `raid system health` - Perform system health check
+- `raid system config` - Show current configuration
+- `raid system metrics` - Detailed system metrics
+
+#### **Profile Management**
+- `raid profiles list` - List available agent profiles
+- `raid profiles show <profile>` - Show profile details
+- `raid profiles validate <profile>` - Validate profile configuration
+- `raid profiles create <template> <name>` - Create new profile from template
+
+#### **Collaboration Management**
+- `raid collab groups` - List collaboration groups
+- `raid collab create <group-name>` - Create collaboration group
+- `raid collab status <group-id>` - Show group status
+
+### Output Formats
+- `--format table` (default) - Formatted tables with colors
+- `--format json` - JSON output for programmatic use
+- `--format yaml` - YAML output for configuration
+
+### Key Features
+- **Control Agent Processing** - Natural language goals with ReAct reasoning and intelligent orchestration
+- **Real-time monitoring** with agent status and relationships
+- **Dual task dispatch modes** - Control Agent orchestration or direct sub-agent dispatch
+- **Comprehensive statistics** including resource utilization
+- **Health monitoring** with system-wide health checks
+- **Profile management** with validation and templates
+- **Collaboration support** for multi-agent coordination
+
+### Usage Examples
+```bash
+# RECOMMENDED: Control Agent with intelligent orchestration
+raid control process "Calculate ROI for $50k investment at 8% over 5 years"
+raid control process "Setup React development environment" --show-thinking
+
+# Alternative: Direct sub-agent dispatch
+raid task run calculator_agent "Calculate 15% tip on $85"
+raid task run setup_agent "Clone and setup GitHub project"
+```
+
+## Setup Agent - Specialized Environment Configuration
+
+**The Setup Agent is a persistent, specialized agent designed for project environment setup and development infrastructure configuration.**
+
+### Key Features
+- **Persistent Lifecycle**: Not subject to automatic cleanup, designed for long-running setup tasks
+- **Advanced LLM Model**: Uses o4-mini with 20,000 token capacity for complex setup decisions
+- **Comprehensive Toolset**: Includes repository cloning, environment analysis, dependency installation, and build verification
+- **Cross-Platform Notifications**: Alerts users on Windows, macOS, and Linux when setup is complete
+- **Enhanced Output Handling**: Automatically redirects large build outputs to log files for reliable analysis
+- **Development Tools**: Pre-installed with git, build-essential, Python, Docker, and common development utilities
+
+### Specialized Capabilities
+
+#### **Environment Setup Workflow**
+1. **Repository Analysis**: Clone and analyze project structure and technology stack
+2. **Dependency Management**: Install system dependencies and configure package managers
+3. **Build Environment**: Set up Python, Node.js, Java, Docker environments as needed
+4. **Configuration**: Generate and validate configuration files
+5. **Testing**: Run build verification and test suites
+6. **Documentation**: Generate setup documentation and troubleshooting guides
+7. **Notification**: Alert users when environment is ready
+
+#### **Technology Stack Support**
+- **Languages**: Python, Node.js, Java, Go, Rust, and more
+- **Package Managers**: pip, npm, maven, gradle, cargo
+- **Containerization**: Docker and Docker Compose setup
+- **Databases**: Configuration for PostgreSQL, MySQL, Redis
+- **CI/CD**: Pipeline configuration and validation
+
+### Usage Examples
+
+#### **CLI Usage**
+```bash
+# Setup a GitHub project
+raid task run setup_agent "Setup development environment for: https://github.com/user/project-name"
+
+# Using Control Agent (recommended)
+raid control process "Clone and setup the React project at github.com/facebook/react for development"
+```
+
+#### **Programmatic Usage**
+```python
+await dispatch_to_sub_agent(
+    sub_agent_profile="setup_agent",
+    task_prompt=\"\"\"
+    Setup development environment for: https://github.com/user/project-name
+    Requirements:
+    - Clone repository to /workspace
+    - Install all dependencies
+    - Run build verification
+    - Execute test suite
+    - Notify when complete
+    \"\"\",
+    timeout=1800  # 30 minutes for complex setups
+)
+```
+
+### Enhanced Security & Reliability
+- **Output Management**: Large build logs automatically saved to files and analyzed with grep/tail
+- **Error Recovery**: Intelligent diagnosis and fixing of common setup issues
+- **Resource Monitoring**: Tracks resource usage during complex builds
+- **Cross-Platform**: Works consistently across Ubuntu, macOS, and Windows containers
+- **Persistent Storage**: Maintains setup state across container restarts
 
 ## Advanced Features
 

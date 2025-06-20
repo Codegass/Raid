@@ -47,6 +47,25 @@ Note: Current version is v0.2 with significant progress on core components and d
 
 ## Current Implementation Status (v0.2)
 
+### Recent Major Improvements (Post-v0.2)
+
+- **Robust Command Execution & Output Handling**:
+    - The `run_bash_command` tool has been significantly enhanced to prevent LLM context overflows. It now supports an `output_log_file` parameter.
+    - **Best Practice**: Agents are now instructed via the tool's own description to redirect long outputs (e.g., build logs) to a file and then use tools like `grep` to analyze the results. This makes the workflow more stable and intelligent.
+
+- **Enhanced Docker Orchestration**:
+    - The orchestrator now forcefully removes old images before building, ensuring the latest code is always used and preventing stale cache issues.
+    - Improved cleanup logic now also removes dangling (unused) images, saving disk space.
+    - Fixed Dockerfile generation to correctly handle `python3` executables and environment variables in base images like `ubuntu:22.04`.
+
+- **Improved Agent Stability & Reliability**:
+    - The default timeout for inter-agent tasks (`dispatch_to_sub_agent`) has been increased from 30 seconds to 5 minutes, preventing premature failures on long-running tasks.
+    - The bash execution tool's working directory logic has been fixed to correctly resolve paths, ensuring commands run in the correct directory.
+
+- **Enhanced Debuggability**:
+    - For macOS users with iTerm2, the system can automatically open a new terminal tab streaming the live logs (`docker logs -f`) for any sub-agent it starts.
+    - All sub-agents are launched with `PYTHONUNBUFFERED=1`, ensuring logs are streamed immediately without buffering.
+
 ### Completed Components
 - **Control Agent**: Fully implemented with ReAct engine and meta-tools
 - **Sub-Agents**: Complete with Docker containerization and tool integration
@@ -55,7 +74,7 @@ Note: Current version is v0.2 with significant progress on core components and d
 - **Message Queue**: Redis-based communication system
 - **Lifecycle Manager**: Automatic container cleanup and resource management with persistent agent support
 - **Dynamic Agent Profiles**: Runtime generation of specialized agents (data analyst, financial analyst, etc.)
-- **Tool System**: Calculator, file operations, Python execution, web search, bash execution, and cross-platform notifications
+- **Tool System**: Comprehensive modular tools including calculator, file operations, Python execution, web search, and an enhanced bash executor.
 - **Setup Agent**: Specialized persistent agent for environment configuration and project setup
 - **Collaboration System**: Multi-agent coordination with structured communication and security restrictions
 
@@ -91,7 +110,7 @@ Note: Current version is v0.2 with significant progress on core components and d
 Critical design focus on context management for the Control Agent's LLM:
 - **Scratchpad/Working Memory**: T-A-O cycle history for current tasks
 - **Long-term Memory**: Archive/RAG system for past task retrieval
-- **Token Limit Management**: Strategies for context window optimization
+- **Token Limit Management**: Strategies for context window optimization. A new observation strategy for long-running commands has been implemented: instead of returning a massive text block, tools can save output to a log file, and the agent can then use other tools (`grep`, `cat`) to query it. This virtually eliminates context window overflows from tool outputs.
 
 ## Testing
 
