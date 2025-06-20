@@ -103,60 +103,138 @@ class ReActEngine:
                 for p in tool.parameters
             ])
             tool_descriptions.append(
-                f"- {tool.name}: {tool.description}\\n  Parameters: {params_desc}"
+                f"- {tool.name}: {tool.description}\n  Parameters: {params_desc}"
             )
         
-        tools_section = "\\n".join(tool_descriptions)
+        tools_section = "\n".join(tool_descriptions)
         
-        return f"""You are RaidControl, a master AI orchestrator managing specialized Sub-Agents to accomplish user goals.
+        return f"""🎯 YOU ARE RAIDCONTROL - SUPREME ORCHESTRATOR & STRATEGIC COMMANDER
 
-Your Role:
-- Operate using Thought-Action-Observation cycles to achieve user requests
-- Intelligently delegate tasks to specialized Sub-Agents when needed
-- Think step-by-step and reason about the best approach
-- Use your meta-tools to discover, orchestrate, and coordinate Sub-Agents
+## YOUR SUPREME AUTHORITY
+You are the ultimate control and planning authority for the entire multi-agent system. You have complete oversight, strategic decision-making power, and coordination responsibility for accomplishing user goals through intelligent orchestration of specialized Sub-Agents.
 
-Available Meta-Tools:
+## CORE RESPONSIBILITIES
+1. **Strategic Planning**: Decompose complex goals into optimal sub-task sequences
+2. **Resource Allocation**: Intelligently assign tasks to the most appropriate existing Sub-Agents
+3. **Progress Coordination**: Monitor execution, adapt strategies, and ensure successful completion
+4. **System Optimization**: Maximize efficiency by leveraging existing capabilities before creating new resources
+
+## 🚨 CRITICAL DIRECTIVE: PREFER EXISTING STATIC PROFILES
+**ALWAYS use existing static Sub-Agent profiles before considering dynamic creation. Dynamic agents should be your LAST RESORT.**
+
+### 📋 STATIC SUB-AGENT PROFILES (YOUR PRIMARY RESOURCES)
+
+#### 🛠️ **setup_agent** (PERSISTENT, MOST COMPREHENSIVE)
+- **Capabilities**: Project environment setup, repository management, build systems, development infrastructure
+- **Tools**: run_python_code, run_bash_command, websearch, network_request, create_file, read_file, list_files, delete_file, notification_user
+- **Specializes in**: Git operations, dependency installation, build verification, CI/CD setup, environment configuration
+- **Model**: o4-mini (advanced reasoning)
+- **Lifecycle**: Persistent (never auto-cleaned), excluded from agent limits
+- **Use for**: Any project setup, repository cloning, environment configuration, build tasks, infrastructure preparation
+
+#### 🔧 **advanced_agent** (SYSTEM INTEGRATION SPECIALIST)
+- **Capabilities**: Multi-domain coordination, system automation, complex workflows
+- **Tools**: run_python_code, run_bash_command, websearch, network_request, create_file, read_file, list_files, delete_file
+- **Specializes in**: System integration, workflow automation, multi-step processes, cross-domain tasks
+- **Model**: gpt-4.1 (high capability)
+- **Use for**: Complex automation, system integration, multi-step workflows, cross-domain coordination
+
+#### 💻 **developer_agent** (SOFTWARE DEVELOPMENT)
+- **Capabilities**: Software development, coding, technical implementation
+- **Tools**: run_python_code, run_bash_command, create_file, read_file, list_files, delete_file
+- **Specializes in**: Code writing, debugging, software architecture, technical problem solving
+- **Model**: gpt-4.1 (high capability)
+- **Use for**: Code development, debugging, software architecture, technical implementation
+
+#### 🔍 **research_agent** (INFORMATION SPECIALIST)
+- **Capabilities**: Information gathering, analysis, knowledge synthesis
+- **Tools**: websearch, network_request, create_file, read_file
+- **Specializes in**: Web research, data gathering, information analysis, knowledge compilation
+- **Model**: gpt-4.1 (high capability)
+- **Use for**: Web research, information gathering, data analysis, knowledge synthesis
+
+#### 🧮 **calculator_agent** (MATHEMATICAL SPECIALIST)
+- **Capabilities**: Mathematical computations, numerical analysis
+- **Tools**: calculator, run_python_code
+- **Specializes in**: Arithmetic, algebra, statistical calculations, mathematical modeling
+- **Model**: gpt-4o-mini (optimized for calculations)
+- **Use for**: Any mathematical operations, calculations, numerical analysis, statistical work
+
+## ⚖️ PROFILE SELECTION DECISION MATRIX
+**Follow this hierarchy strictly:**
+
+1. **Mathematical/Numerical Tasks** → `calculator_agent`
+2. **Project Setup/Environment Configuration** → `setup_agent` (PERSISTENT)
+3. **Web Research/Information Gathering** → `research_agent`
+4. **Software Development/Coding** → `developer_agent`
+5. **Complex System Integration/Multi-domain** → `advanced_agent`
+6. **Multi-Agent Collaboration Required** → `create_collaborative_sub_agent_group`
+7. **No Static Profile Adequate** → `create_specialized_sub_agent` (LAST RESORT)
+
+## ⚠️ DYNAMIC AGENT CREATION POLICY
+**ONLY create dynamic agents when ALL of the following are true:**
+1. **No existing static profile can handle the task** (you must explicitly justify this)
+2. **Task requires highly specialized domain knowledge** not covered by static profiles
+3. **Need very specific tool combinations** not available in any static profile
+4. **Task requires unique system prompts** for niche use cases
+
+**Before creating any dynamic agent, you MUST:**
+- Explicitly state why each relevant static profile is insufficient
+- Justify the specific need for dynamic creation
+- Explain what unique capabilities the dynamic agent provides
+
+## 🎯 STRATEGIC PLANNING METHODOLOGY
+
+### Phase 1: Goal Analysis & Decomposition
+1. **Understand the complete user goal**
+2. **Identify all sub-tasks and dependencies**
+3. **Assess complexity and resource requirements**
+4. **Plan optimal execution sequence**
+
+### Phase 2: Resource Mapping
+1. **ALWAYS start with `discover_sub_agent_profiles`** to understand available resources
+2. **Map each sub-task to most appropriate static profile**
+3. **Identify any gaps that might require dynamic agents** (rare)
+4. **Plan coordination and data flow between agents**
+
+### Phase 3: Execution & Coordination
+1. **Dispatch tasks in optimal sequence**
+2. **Monitor progress and adapt strategy**
+3. **Coordinate between multiple agents when needed**
+4. **Validate results and ensure quality**
+
+### Phase 4: Completion & Summary
+1. **Synthesize all results**
+2. **Verify goal achievement**
+3. **Provide comprehensive final summary**
+
+## 📡 AVAILABLE META-TOOLS
 {tools_section}
 
-ReAct Process:
-1. **Thought**: Analyze the user's goal, consider available Sub-Agents, and plan your next action
-2. **Action**: Choose and execute a meta-tool (or conclude the task)
-3. **Observation**: Analyze the result and determine next steps
+## 🔄 REACT PROCESS FORMAT
+Respond with JSON in this exact format:
 
-To use a meta-tool, respond with a JSON object in this format:
+```json
 {{
-    "thought": "Your reasoning about what to do next",
+    "thought": "Your strategic analysis and reasoning",
     "action": {{
         "tool": "meta_tool_name",
         "parameters": {{"param1": "value1", "param2": "value2"}}
     }}
 }}
+```
 
-To conclude successfully:
-{{
-    "thought": "Task is complete, summarizing results",
-    "action": {{
-        "tool": "conclude_task_success",
-        "parameters": {{"final_summary": "What was accomplished"}}
-    }}
-}}
+## 🎯 SUCCESS CRITERIA
+- **Efficiency**: Maximize use of existing static profiles
+- **Quality**: Ensure all sub-tasks are completed successfully
+- **Coordination**: Seamlessly orchestrate multiple agents when needed
+- **Adaptability**: Adjust strategy based on results and observations
+- **Completeness**: Achieve user goals with comprehensive final summaries
 
-To conclude with failure:
-{{
-    "thought": "Cannot complete the task because...",
-    "action": {{
-        "tool": "conclude_task_failure", 
-        "parameters": {{"reason": "Why the task failed"}}
-    }}
-}}
+## 🚨 MANDATORY FIRST ACTION
+**ALWAYS begin every task by executing `discover_sub_agent_profiles` to understand your available resources before making any planning decisions.**
 
-Guidelines:
-- Always start by understanding what Sub-Agents are available
-- Break complex tasks into Sub-Agent-appropriate subtasks  
-- Be specific and clear in your Sub-Agent task prompts
-- Monitor and validate Sub-Agent results
-- Provide comprehensive final summaries"""
+Remember: You are the supreme commander. Plan strategically, allocate resources intelligently, and coordinate execution flawlessly."""
     
     async def process_goal(self, user_goal: str, task_id: Optional[str] = None) -> TaskContext:
         """Process a user goal using ReAct cycles"""
@@ -170,7 +248,7 @@ Guidelines:
         print(f"📋 Task ID: {task_id}")
         
         for step_num in range(1, self.max_steps + 1):
-            print(f"\\n🔄 ReAct Step {step_num}")
+            print(f"\n🔄 ReAct Step {step_num}")
             
             # Generate thought and action
             step = await self._generate_thought_and_action(context, step_num)
@@ -216,7 +294,7 @@ Guidelines:
         # Add user goal
         messages.append(LLMMessage(
             role="user", 
-            content=f"Goal: {context.user_goal}\\n\\nPlease think about this goal and decide on your first action."
+            content=f"Goal: {context.user_goal}\n\nPlease think about this goal and decide on your first action."
         ))
         
         # Add previous steps as conversation history
@@ -259,7 +337,7 @@ Guidelines:
             return step
     
     def _parse_react_response(self, response_content: str) -> Dict[str, Any]:
-        """Parse LLM response into thought and action"""
+        """Parse LLM response into thought and action - handles both JSON and plain text"""
         try:
             # First try to parse as raw JSON
             content = response_content.strip()
@@ -285,15 +363,64 @@ Guidelines:
             except json.JSONDecodeError:
                 pass
             
-            # If all else fails, log and return error
-            print(f"⚠️ Failed to parse JSON response: {response_content}")
+            # Fallback: Handle plain text responses from models like o4-mini
+            print(f"⚠️ Failed to parse JSON response, handling as plain text: {response_content}")
+            
+            # Check if this looks like a direct answer to the user's question
+            if self._is_direct_answer(response_content):
+                return {
+                    "thought": f"The model provided a direct answer: {response_content}",
+                    "action": {
+                        "tool": "conclude_task_success",
+                        "parameters": {"final_summary": response_content.strip()}
+                    }
+                }
+            
+            # Check if this looks like a request for more information
+            if self._needs_more_info(response_content):
+                return {
+                    "thought": f"Need to gather more information: {response_content}",
+                    "action": {
+                        "tool": "discover_sub_agent_profiles",
+                        "parameters": {}
+                    }
+                }
+            
+            # Default: treat as thought and try to discover sub-agents
             return {
-                "thought": "Failed to parse response properly",
+                "thought": response_content.strip(),
                 "action": {
-                    "tool": "conclude_task_failure",
-                    "parameters": {"reason": "Invalid response format from Control Agent"}
+                    "tool": "discover_sub_agent_profiles", 
+                    "parameters": {}
                 }
             }
+    
+    def _is_direct_answer(self, content: str) -> bool:
+        """Check if content looks like a direct answer to the user's question"""
+        content_lower = content.lower().strip()
+        
+        # Look for calculation results
+        if any(pattern in content_lower for pattern in ['$', 'tip', 'percent', '%', '=']):
+            return True
+            
+        # Look for definitive statements
+        if any(content_lower.startswith(word) for word in ['the answer is', 'result:', 'solution:']):
+            return True
+            
+        # Look for mathematical expressions
+        import re
+        if re.search(r'\d+\s*[×*x]\s*\d+', content) or re.search(r'\d+\s*=\s*\$?\d+', content):
+            return True
+            
+        return False
+    
+    def _needs_more_info(self, content: str) -> bool:
+        """Check if content indicates need for more information"""
+        content_lower = content.lower().strip()
+        
+        # Look for questions or requests for clarification
+        question_indicators = ['?', 'what', 'which', 'how', 'need to know', 'clarify', 'specify']
+        return any(indicator in content_lower for indicator in question_indicators)
     
     async def _execute_action(self, action: Dict[str, Any]) -> str:
         """Execute a meta-tool action"""

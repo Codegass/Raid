@@ -46,13 +46,13 @@ class SubAgentRunner:
         try:
             await self.sub_agent.start()
         except KeyboardInterrupt:
-            print("\\nReceived interrupt signal")
+            print("\nReceived interrupt signal")
         finally:
             await self._shutdown()
     
     def _signal_handler(self, signum: int, frame) -> None:
         """Handle shutdown signals"""
-        print(f"\\nReceived signal {signum}, shutting down...")
+        print(f"\nReceived signal {signum}, shutting down...")
         self.running = False
     
     async def _shutdown(self) -> None:

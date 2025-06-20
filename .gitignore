@@ -157,3 +157,8 @@ manual_*.py
 *.tmp
 *.temp
 temp_*
+uv.lock
+CLAUDE.md
+CONTROL_AGENT_USAGE.md
+SETUP_AGENT_IMPROVEMENTS.md
+SETUP_AGENT_GUIDE.md

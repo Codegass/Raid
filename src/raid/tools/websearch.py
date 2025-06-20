@@ -5,6 +5,8 @@ import asyncio
 import aiohttp
 from typing import List, Dict, Any, Optional
 from .base import Tool, ToolParameter
+from bs4 import BeautifulSoup
+import urllib.parse
 
 
 class WebSearchTool(Tool):
@@ -63,53 +65,51 @@ class WebSearchTool(Tool):
             return f"Error performing web search: {str(e)}"
     
     async def _search_duckduckgo(self, query: str, num_results: int) -> List[Dict[str, str]]:
-        """Search using DuckDuckGo's instant answer API"""
+        """Search using DuckDuckGo HTML endpoint and parse the results."""
+        # DuckDuckGo's HTML endpoint is more reliable for general search results
+        # than their JSON API, which is primarily for Instant Answers.
+        url = "https://html.duckduckgo.com/html/"
+        params = {"q": query}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
+        }
+
         try:
-            # Use DuckDuckGo instant answer API
-            url = "https://api.duckduckgo.com/"
-            params = {
-                "q": query,
-                "format": "json",
-                "no_html": "1",
-                "skip_disambig": "1"
-            }
-            
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, timeout=10) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        results = []
-                        
-                        # Extract instant answer if available
-                        if data.get("AbstractText"):
+                async with session.get(url, params=params, headers=headers, timeout=10) as response:
+                    if response.status != 200:
+                        print(f"DuckDuckGo search failed with status: {response.status}")
+                        return []
+                    
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    results = []
+                    result_nodes = soup.find_all('div', class_='result')
+
+                    for node in result_nodes[:num_results]:
+                        title_node = node.find('a', class_='result__a')
+                        snippet_node = node.find('a', class_='result__snippet')
+                        url_node = node.find('a', class_='result__url')
+
+                        if title_node and snippet_node and url_node:
+                            # The URL is in the href attribute, but needs to be cleaned up.
+                            raw_url = url_node['href']
+                            # It's URL-encoded and has a DDG redirect. We can decode and extract the real URL.
+                            parsed_url = urllib.parse.unquote(raw_url)
+                            real_url = parsed_url.split('uddg=')[-1].split('&')[0] if 'uddg=' in parsed_url else parsed_url
+
                             results.append({
-                                "title": data.get("Heading", "Instant Answer"),
-                                "url": data.get("AbstractURL", ""),
-                                "snippet": data.get("AbstractText", "")
+                                'title': title_node.get_text(strip=True),
+                                'url': real_url,
+                                'snippet': snippet_node.get_text(strip=True),
                             })
-                        
-                        # Extract related topics
-                        if data.get("RelatedTopics"):
-                            for topic in data.get("RelatedTopics", [])[:num_results-len(results)]:
-                                if isinstance(topic, dict) and topic.get("Text"):
-                                    results.append({
-                                        "title": topic.get("FirstURL", "").split("/")[-1].replace("_", " ") if topic.get("FirstURL") else "Related Topic",
-                                        "url": topic.get("FirstURL", ""),
-                                        "snippet": topic.get("Text", "")
-                                    })
-                        
-                        # If no good results, try a fallback approach
-                        if not results:
-                            results = await self._search_fallback(query, num_results)
-                        
-                        return results[:num_results]
-            
-            return []
-            
+                    
+                    return results
+
         except Exception as e:
-            print(f"DuckDuckGo search error: {e}")
-            # Fallback to alternative search method
-            return await self._search_fallback(query, num_results)
+            print(f"An error occurred during DuckDuckGo HTML search: {e}")
+            return []
     
     async def _search_fallback(self, query: str, num_results: int) -> List[Dict[str, str]]:
         """Fallback search method using a simple web scraping approach"""

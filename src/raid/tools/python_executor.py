@@ -7,6 +7,7 @@ import tempfile
 import os
 import subprocess
 import json
+import asyncio
 from typing import List, Dict, Any, Optional
 from .base import Tool, ToolParameter
 
@@ -22,17 +23,13 @@ class RunPythonCodeTool(Tool):
             'statistics', 'collections', 'itertools', 'functools', 'operator',
             'decimal', 'fractions', 'uuid', 'hashlib', 'base64', 'urllib.parse',
             'pandas', 'numpy', 'matplotlib.pyplot', 'seaborn', 'plotly',
-            'requests', 'beautifulsoup4', 'lxml'
+            'requests', 'beautifulsoup4', 'lxml', 'os', 'sys', 'subprocess', 'shutil'
         }
         
-        # Forbidden patterns for security
+        # Forbidden patterns for security - much more relaxed inside a container
         self.forbidden_patterns = [
-            'import os', 'import sys', 'import subprocess', 'import shutil',
-            'import socket', 'import urllib.request', 'import urllib.urlopen',
-            'exec(', 'eval(', '__import__', 'open(', 'file(',
-            'input(', 'raw_input(', 'compile(', 'globals()', 'locals()',
-            'dir()', 'vars()', 'delattr', 'setattr', 'getattr',
-            'exit(', 'quit(', 'reload('
+            '__import__',  # Still a good idea to restrict this
+            # 'eval(', 'exec(', # Let's allow these for now, but be careful
         ]
     
     @property
@@ -72,38 +69,67 @@ class RunPythonCodeTool(Tool):
             return f"Security Error: {security_check}"
         
         try:
-            # Execute in isolated environment
-            result = await self._execute_code_isolated(code, timeout)
+            # For containerized agents, we can execute with less isolation
+            # as the container itself is the sandbox.
+            # Using subprocess to run the code in a separate process.
+            result = await self._execute_in_subprocess(code, timeout)
             return result
             
         except Exception as e:
             return f"Execution Error: {str(e)}"
     
     def _check_security(self, code: str) -> Optional[str]:
-        """Check code for security violations"""
+        """
+        Check code for security violations.
+        Since this runs inside a container, we can be more permissive.
+        """
         code_lower = code.lower()
         
-        # Check for forbidden patterns
-        for pattern in self.forbidden_patterns:
-            if pattern.lower() in code_lower:
-                return f"Forbidden operation detected: {pattern}"
-        
-        # Check for file system access
-        if any(keyword in code_lower for keyword in ['open(', 'file(', 'with open']):
-            # Allow only specific safe file operations
-            if not any(safe_op in code_lower for safe_op in ['csv.reader', 'json.load', 'pd.read_']):
-                return "File system access is restricted"
-        
-        # Check for network access
-        if any(keyword in code_lower for keyword in ['requests.', 'urllib.', 'http', 'socket']):
-            return "Network access is restricted in code execution"
-        
-        # Check for system commands
-        if any(keyword in code_lower for keyword in ['system(', 'popen(', 'call(', 'subprocess']):
-            return "System command execution is forbidden"
+        # We still might want to prevent some truly dangerous operations
+        # For now, let's keep it simple.
+        if '__import__' in code_lower:
+            return "Forbidden operation detected: __import__"
         
         return None
-    
+
+    async def _execute_in_subprocess(self, code: str, timeout: int) -> str:
+        """Execute Python code in a separate process for isolation."""
+        # Create a temporary file to write the code to
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False) as tmp_file:
+            tmp_file.write(code)
+            script_path = tmp_file.name
+
+        try:
+            # Execute the script using the same python interpreter
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, script_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            # Wait for the process to complete with a timeout
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+
+            # Format the output
+            output = ""
+            if stdout:
+                output += f"Output:\n{stdout.decode('utf-8').strip()}\n"
+            if stderr:
+                output += f"Errors:\n{stderr.decode('utf-8').strip()}\n"
+
+            return output.strip() if output else "Code executed successfully with no output."
+
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            return f"Execution Error: Code execution timed out after {timeout} seconds."
+        except Exception as e:
+            return f"Execution Error: {str(e)}"
+        finally:
+            # Clean up the temporary file
+            if os.path.exists(script_path):
+                os.remove(script_path)
+
     async def _execute_code_isolated(self, code: str, timeout: int) -> str:
         """Execute code in an isolated environment"""
         # Capture stdout and stderr

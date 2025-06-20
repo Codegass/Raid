@@ -12,6 +12,17 @@ class DockerConfig(BaseModel):
     base_image: str
     working_dir: str = "/app"
     expose_port: Optional[int] = None
+    additional_packages: Optional[List[str]] = None
+    environment_variables: Optional[Dict[str, str]] = None
+    volumes: Optional[List[str]] = None
+    persistent_storage: bool = False
+
+
+class LifecycleConfig(BaseModel):
+    """Lifecycle management configuration for Sub-Agent"""
+    persistent: bool = False
+    auto_cleanup: bool = True
+    exclude_from_count: bool = False
 
 
 class SubAgentProfile(BaseModel):
@@ -23,6 +34,7 @@ class SubAgentProfile(BaseModel):
     tools: List[str]
     system_prompt: str
     docker_config: DockerConfig
+    lifecycle_config: Optional[LifecycleConfig] = None
     
     @classmethod
     def from_yaml(cls, yaml_path: str) -> "SubAgentProfile":
@@ -91,14 +103,46 @@ class SubAgentConfigurator:
     
     def generate_dockerfile(self, profile: SubAgentProfile) -> str:
         """Generate Dockerfile content for a Sub-Agent profile"""
+        
+        install_commands = []
+        packages_to_install = set(profile.docker_config.additional_packages or [])
+
+        # For slim images that might not have pip
+        if "slim" in profile.docker_config.base_image and "python3-pip" not in packages_to_install:
+            packages_to_install.add("python3-pip")
+
+        if packages_to_install:
+            install_commands.append("apt-get update -y")
+            install_commands.append(f"apt-get install -y --no-install-recommends {' '.join(sorted(list(packages_to_install)))}")
+            install_commands.append("rm -rf /var/lib/apt/lists/*")
+
+        install_section = f"RUN {' && '.join(install_commands)}" if install_commands else ""
+        
+        python_executable = "python3"
+        
+        env_vars = {
+            "PYTHONPATH": f"{profile.docker_config.working_dir}/src",
+            "RAID_SUB_AGENT_PROFILE": profile.name,
+        }
+        if profile.docker_config.environment_variables:
+            env_vars.update(profile.docker_config.environment_variables)
+
+        env_section = "\n".join([f"ENV {key}={value}" for key, value in env_vars.items()])
+
         dockerfile_content = f"""# Dockerfile for {profile.name}
 FROM {profile.docker_config.base_image}
 
 WORKDIR {profile.docker_config.working_dir}
 
+# Set environment variables for build and runtime
+{env_section}
+
+# Install OS dependencies
+{install_section}
+
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN {python_executable} -m pip install --no-cache-dir -r requirements.txt
 
 # Copy Sub-Agent code
 COPY src/ ./src/
@@ -106,12 +150,8 @@ COPY src/ ./src/
 # Copy profile configuration
 COPY profiles/{profile.name}.yaml ./profile.yaml
 
-# Set environment variables
-ENV RAID_SUB_AGENT_PROFILE={profile.name}
-ENV PYTHONPATH=/app/src
-
 # Run the Sub-Agent
-CMD ["python", "-m", "raid.sub_agent.main"]
+CMD ["{python_executable}", "-m", "raid.sub_agent.main"]
 """
         
         if profile.docker_config.expose_port:
@@ -128,4 +168,5 @@ openai>=1.0.0
 requests>=2.28.0
 asyncio-mqtt>=0.13.0
 aiohttp>=3.8.0
+beautifulsoup4>=4.0.0
 """

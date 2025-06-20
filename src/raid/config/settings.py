@@ -34,6 +34,7 @@ class RaidConfig(BaseModel):
     def from_env(cls) -> "RaidConfig":
         """Create configuration from environment variables"""
         llm_provider = os.getenv("RAID_LLM_PROVIDER", "openai")
+        print(f"DEBUG: Detected LLM Provider: '{llm_provider}' (Type: {type(llm_provider)})")
         
         if llm_provider == "openai":
             llm_config = LLMBackendConfig(

@@ -76,7 +76,7 @@ class DiscoverSubAgentProfilesTool(MetaTool):
     
     @property
     def description(self) -> str:
-        return "Get list of available Sub-Agent profiles and their capabilities"
+        return "Get comprehensive list of available static Sub-Agent profiles with their capabilities, tools, and recommended use cases. Use this FIRST to understand what existing profiles can handle before considering dynamic agent creation."
     
     @property
     def parameters(self) -> List[MetaToolParameter]:
@@ -88,14 +88,53 @@ class DiscoverSubAgentProfilesTool(MetaTool):
             configurator = SubAgentConfigurator()
             profiles = configurator.get_all_profiles()
             
-            result = "Available Sub-Agent Profiles:\n"
-            for name, profile in profiles.items():
-                result += f"\n- **{name}** ({profile.version})\n"
-                result += f"  Description: {profile.description}\n"
-                result += f"  Tools: {', '.join(profile.tools)}\n"
-                result += f"  LLM Model: {profile.llm_config.get('model', 'default')}\n"
+            if not profiles:
+                return "No Sub-Agent profiles available."
             
-            return result if profiles else "No Sub-Agent profiles available."
+            result = "🤖 Available Static Sub-Agent Profiles (PREFER THESE OVER DYNAMIC CREATION):\n"
+            
+            # Define enhanced capability descriptions for each profile
+            profile_capabilities = {
+                "calculator_agent": {
+                    "use_cases": ["Mathematical calculations", "Statistical analysis", "Numerical computations", "Data analysis", "Mathematical modeling"],
+                    "best_for": "Any task involving numbers, arithmetic, algebra, calculus, or mathematical operations"
+                },
+                "developer_agent": {
+                    "use_cases": ["Software development", "Code generation", "Code review", "Testing", "Build automation", "File management"],
+                    "best_for": "Programming tasks, software engineering, technical implementation, code-related operations"
+                },
+                "advanced_agent": {
+                    "use_cases": ["System integration", "API integration", "Workflow automation", "Multi-domain tasks", "Infrastructure management"],
+                    "best_for": "Complex workflows requiring multiple tools, system integration, automation tasks"
+                },
+                "research_agent": {
+                    "use_cases": ["Web research", "Information gathering", "Market analysis", "Fact-checking", "Data collection"],
+                    "best_for": "Tasks requiring external information, research, competitive analysis, knowledge synthesis"
+                },
+                "setup_agent": {
+                    "use_cases": ["Environment setup", "Repository cloning", "Dependency installation", "Build configuration", "Infrastructure setup"],
+                    "best_for": "Project initialization, development environment configuration, deployment setup"
+                }
+            }
+            
+            for name, profile in profiles.items():
+                result += f"\n🔧 **{name}** (v{profile.version})\n"
+                result += f"   📝 Description: {profile.description}\n"
+                result += f"   🛠️  Tools: {', '.join(profile.tools)}\n"
+                result += f"   🧠 LLM Model: {profile.llm_config.get('model', 'default')}\n"
+                
+                # Add enhanced capability information
+                if name in profile_capabilities:
+                    caps = profile_capabilities[name]
+                    result += f"   ✅ Use Cases: {', '.join(caps['use_cases'])}\n"
+                    result += f"   🎯 Best For: {caps['best_for']}\n"
+                
+                result += "\n"
+            
+            result += "💡 RECOMMENDATION: Always try to use these existing static profiles before creating dynamic agents.\n"
+            result += "   Dynamic agents should only be created for highly specialized tasks that existing profiles cannot handle.\n"
+            
+            return result
             
         except Exception as e:
             return f"Error discovering profiles: {str(e)}"
@@ -104,9 +143,10 @@ class DiscoverSubAgentProfilesTool(MetaTool):
 class DispatchToSubAgentTool(MetaTool):
     """Meta-tool to dispatch tasks to Sub-Agents"""
     
-    def __init__(self, config: RaidConfig):
+    def __init__(self, config: RaidConfig, lifecycle_manager=None):
         super().__init__(config)
         self.orchestrator = DockerOrchestrator(config.docker_socket)
+        self.lifecycle_manager = lifecycle_manager
         self.mq = None  # Will be initialized when needed
     
     @property
@@ -135,7 +175,7 @@ class DispatchToSubAgentTool(MetaTool):
             MetaToolParameter(
                 name="timeout",
                 type="integer",
-                description="Timeout in seconds to wait for result (default: 30)",
+                description="Timeout in seconds to wait for result (default: 300)",
                 required=False
             )
         ]
@@ -145,7 +185,7 @@ class DispatchToSubAgentTool(MetaTool):
         try:
             sub_agent_profile = kwargs.get("sub_agent_profile")
             task_prompt = kwargs.get("task_prompt")
-            timeout = kwargs.get("timeout", 30)
+            timeout = kwargs.get("timeout", 300)
             
             if not sub_agent_profile or not task_prompt:
                 return "Error: sub_agent_profile and task_prompt are required"
@@ -173,6 +213,16 @@ class DispatchToSubAgentTool(MetaTool):
                         "RAID_REDIS_PORT": str(self.config.message_queue.redis_port),
                     }
                 )
+                
+                # Register with lifecycle manager
+                if self.lifecycle_manager:
+                    await self.lifecycle_manager.register_agent(
+                        agent_name=sub_agent_profile,
+                        container_id=container.id,
+                        profile_name=sub_agent_profile
+                    )
+                    self.lifecycle_manager.mark_agent_task_started(sub_agent_profile)
+                
                 # Give container time to start
                 await asyncio.sleep(2)
             except Exception as e:
@@ -199,11 +249,21 @@ class DispatchToSubAgentTool(MetaTool):
             )
             
             if result:
+                # Mark task completion with lifecycle manager
+                if self.lifecycle_manager:
+                    if result.status == "success":
+                        self.lifecycle_manager.mark_agent_task_completed(sub_agent_profile)
+                    else:
+                        self.lifecycle_manager.mark_agent_error(sub_agent_profile)
+                
                 if result.status == "success":
                     return f"Sub-Agent Result: {result.result}"
                 else:
                     return f"Sub-Agent Error: {result.error}"
             else:
+                # Mark timeout as error
+                if self.lifecycle_manager:
+                    self.lifecycle_manager.mark_agent_error(sub_agent_profile)
                 return f"Timeout: No result received from {sub_agent_profile} within {timeout} seconds"
                 
         except Exception as e:
@@ -269,10 +329,11 @@ class ConcludeTaskFailureTool(MetaTool):
 class CreateSpecializedSubAgentTool(MetaTool):
     """Meta-tool to create dynamic specialized Sub-Agents for specific tasks"""
     
-    def __init__(self, config: RaidConfig):
+    def __init__(self, config: RaidConfig, lifecycle_manager=None):
         super().__init__(config)
         self.dynamic_manager = DynamicSubAgentManager(config.max_dynamic_sub_agents)
         self.configurator = SubAgentConfigurator()
+        self.lifecycle_manager = lifecycle_manager
     
     @property
     def name(self) -> str:
@@ -280,7 +341,7 @@ class CreateSpecializedSubAgentTool(MetaTool):
     
     @property
     def description(self) -> str:
-        return "Create a new specialized Sub-Agent with a specific role for a particular task"
+        return "Create a new specialized Sub-Agent with a specific role ONLY when existing static profiles (calculator_agent, developer_agent, advanced_agent, research_agent, setup_agent) cannot handle the task"
     
     @property
     def parameters(self) -> List[MetaToolParameter]:
@@ -294,7 +355,7 @@ class CreateSpecializedSubAgentTool(MetaTool):
             MetaToolParameter(
                 name="role",
                 type="string",
-                description="Role for the Sub-Agent: 'data_analyst', 'financial_analyst', 'research_analyst', 'problem_solver', or 'quality_analyst'. If not specified, role will be auto-suggested based on task.",
+                description="Role for the Sub-Agent: 'data_analyst', 'financial_analyst', 'research_analyst', 'problem_solver', or 'quality_analyst'. ONLY use this when static profiles are insufficient. If not specified, role will be auto-suggested based on task.",
                 required=False
             ),
             MetaToolParameter(
@@ -314,6 +375,15 @@ class CreateSpecializedSubAgentTool(MetaTool):
             
             if not task_description:
                 return "Error: task_description is required"
+            
+            # Suggest checking static profiles first
+            static_suggestions = self._suggest_static_profile_alternatives(task_description)
+            if static_suggestions:
+                warning_msg = f"⚠️  WARNING: Before creating a dynamic agent, consider these existing static profiles:\n{static_suggestions}\n"
+                warning_msg += "💡 Dynamic agents should only be created when static profiles cannot handle the task.\n"
+                warning_msg += "If you're sure static profiles are insufficient, here's your dynamic agent:\n\n"
+            else:
+                warning_msg = ""
             
             # Check if we can create more agents
             if not self.dynamic_manager.can_create_agent():
@@ -344,7 +414,7 @@ class CreateSpecializedSubAgentTool(MetaTool):
             agent_metadata = self.dynamic_manager.active_agents[profile.name]
             actual_role = agent_metadata["role"]
             
-            result = f"✅ Created specialized Sub-Agent: '{profile.name}'\n"
+            result = f"{warning_msg}✅ Created specialized Sub-Agent: '{profile.name}'\n"
             result += f"Role: {actual_role}\n"
             result += f"Specialization: {profile.description}\n"
             result += f"Available tools: {', '.join(profile.tools)}\n"
@@ -359,17 +429,45 @@ class CreateSpecializedSubAgentTool(MetaTool):
             
         except Exception as e:
             return f"Error creating specialized Sub-Agent: {str(e)}"
+    
+    def _suggest_static_profile_alternatives(self, task_description: str) -> str:
+        """Suggest static profile alternatives based on task description"""
+        task_lower = task_description.lower()
+        suggestions = []
+        
+        # Check for mathematical/numerical tasks
+        if any(word in task_lower for word in ["calculate", "math", "number", "statistical", "analysis", "data", "compute", "arithmetic"]):
+            suggestions.append("• calculator_agent - for mathematical computations, statistical analysis, numerical operations")
+        
+        # Check for development tasks
+        if any(word in task_lower for word in ["code", "program", "develop", "build", "test", "debug", "software", "script", "file"]):
+            suggestions.append("• developer_agent - for software development, coding, file operations, technical implementation")
+        
+        # Check for research tasks
+        if any(word in task_lower for word in ["research", "search", "find", "investigate", "information", "web", "analyze", "study"]):
+            suggestions.append("• research_agent - for web research, information gathering, data collection")
+        
+        # Check for setup/infrastructure tasks
+        if any(word in task_lower for word in ["setup", "install", "configure", "environment", "deploy", "build", "repository", "clone"]):
+            suggestions.append("• setup_agent - for environment setup, project initialization, infrastructure configuration")
+        
+        # Check for complex integration tasks
+        if any(word in task_lower for word in ["integrate", "automate", "workflow", "api", "system", "orchestrate", "coordinate"]):
+            suggestions.append("• advanced_agent - for system integration, workflow automation, complex multi-tool tasks")
+        
+        return "\n".join(suggestions) if suggestions else ""
 
 
 class CreateCollaborativeSubAgentGroupTool(MetaTool):
     """Meta-tool to create a group of Sub-Agents that can collaborate with restricted communication"""
     
-    def __init__(self, config: RaidConfig):
+    def __init__(self, config: RaidConfig, lifecycle_manager=None):
         super().__init__(config)
         self.dynamic_manager = DynamicSubAgentManager(config.max_dynamic_sub_agents)
         self.collaboration_manager = CollaborationManager(config)
         self.configurator = SubAgentConfigurator()
         self.orchestrator = DockerOrchestrator(config.docker_socket)
+        self.lifecycle_manager = lifecycle_manager
         self.mq = None
     
     @property
@@ -505,6 +603,15 @@ class CreateCollaborativeSubAgentGroupTool(MetaTool):
                             "RAID_COLLABORATION_ENABLED": "true"
                         }
                     )
+                    
+                    # Register with lifecycle manager
+                    if self.lifecycle_manager:
+                        await self.lifecycle_manager.register_agent(
+                            agent_name=profile.name,
+                            container_id=container.id,
+                            profile_name=profile.name
+                        )
+                        
                 except Exception as e:
                     return f"Error starting container for {profile.name}: {str(e)}"
             
@@ -612,17 +719,18 @@ class CreateCollaborativeSubAgentGroupTool(MetaTool):
 class MetaToolRegistry:
     """Registry for managing Control Agent meta-tools"""
     
-    def __init__(self, config: RaidConfig):
+    def __init__(self, config: RaidConfig, lifecycle_manager=None):
         self.config = config
+        self.lifecycle_manager = lifecycle_manager
         self._tools: Dict[str, MetaTool] = {}
         self._register_default_tools()
     
     def _register_default_tools(self) -> None:
         """Register default meta-tools"""
         self.register(DiscoverSubAgentProfilesTool(self.config))
-        self.register(DispatchToSubAgentTool(self.config))
-        self.register(CreateSpecializedSubAgentTool(self.config))
-        self.register(CreateCollaborativeSubAgentGroupTool(self.config))
+        self.register(DispatchToSubAgentTool(self.config, self.lifecycle_manager))
+        self.register(CreateSpecializedSubAgentTool(self.config, self.lifecycle_manager))
+        self.register(CreateCollaborativeSubAgentGroupTool(self.config, self.lifecycle_manager))
         self.register(ConcludeTaskSuccessTool(self.config))
         self.register(ConcludeTaskFailureTool(self.config))
     

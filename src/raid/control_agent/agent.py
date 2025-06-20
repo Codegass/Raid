@@ -7,6 +7,7 @@ from ..config.settings import RaidConfig
 from ..llm_backend.factory import create_llm_backend
 from .react_engine import ReActEngine, TaskContext
 from .meta_tools import MetaToolRegistry
+from ..lifecycle.manager import SubAgentLifecycleManager
 
 
 class ControlAgent:
@@ -18,24 +19,37 @@ class ControlAgent:
         # Initialize LLM backend for Control Agent
         self.llm_backend = create_llm_backend(config.llm_backend)
         
-        # Initialize meta-tool registry
-        self.meta_tool_registry = MetaToolRegistry(config)
+        # Initialize lifecycle manager
+        self.lifecycle_manager = SubAgentLifecycleManager(config)
+        
+        # Initialize meta-tool registry (pass lifecycle manager to it)
+        self.meta_tool_registry = MetaToolRegistry(config, lifecycle_manager=self.lifecycle_manager)
         
         # Initialize ReAct engine
         self.react_engine = ReActEngine(
             llm_backend=self.llm_backend,
             meta_tool_registry=self.meta_tool_registry,
-            max_steps=10
+            max_steps=20
         )
         
         print("🤖 Control Agent initialized successfully")
         print(f"   LLM Backend: {config.llm_backend.provider} ({config.llm_backend.model})")
         print(f"   Meta-Tools: {len(self.meta_tool_registry.list_tool_names())} available")
     
+    async def start(self):
+        """Start the Control Agent and its lifecycle manager"""
+        await self.lifecycle_manager.start_monitoring()
+        print("🤖 Control Agent started with lifecycle management")
+    
+    async def stop(self):
+        """Stop the Control Agent and cleanup all Sub-Agents"""
+        await self.lifecycle_manager.stop_monitoring()
+        print("🤖 Control Agent stopped")
+    
     async def process_user_goal(self, user_goal: str, task_id: Optional[str] = None) -> TaskContext:
         """Process a user goal using ReAct cycles to orchestrate Sub-Agents"""
         
-        print(f"\\n🎯 Control Agent received goal: {user_goal}")
+        print(f"\n🎯 Control Agent received goal: {user_goal}")
         
         try:
             # Health check LLM backend
@@ -48,10 +62,18 @@ class ControlAgent:
             # Process the goal using ReAct engine
             context = await self.react_engine.process_goal(user_goal, task_id)
             
-            print(f"\\n📊 Final Result:")
+            print(f"\n📊 Final Result:")
             print(f"   Status: {context.status}")
             print(f"   Steps taken: {len(context.steps)}")
             print(f"   Result: {context.final_result}")
+            
+            # Show lifecycle statistics
+            stats = self.lifecycle_manager.get_agent_stats()
+            print(f"\n🔄 Lifecycle Stats:")
+            print(f"   Active agents: {stats['total_agents']}/{stats['max_capacity']}")
+            print(f"   Total tasks completed: {stats['total_tasks_completed']}")
+            if stats['cleanup_stats']['idle_cleanups'] > 0:
+                print(f"   Cleaned up {stats['cleanup_stats']['idle_cleanups']} idle agents")
             
             return context
             
@@ -89,12 +111,12 @@ class ControlAgent:
         """Get information about available meta-tools"""
         tools = self.meta_tool_registry.get_all_tools()
         
-        info = "Control Agent Meta-Tools:\\n"
+        info = "Control Agent Meta-Tools:\n"
         for name, tool in tools.items():
-            info += f"\\n- **{name}**: {tool.description}\\n"
+            info += f"\n- **{name}**: {tool.description}\n"
             if tool.parameters:
                 for param in tool.parameters:
                     required = " (required)" if param.required else " (optional)"
-                    info += f"  • {param.name} ({param.type}){required}: {param.description}\\n"
+                    info += f"  • {param.name} ({param.type}){required}: {param.description}\n"
         
         return info

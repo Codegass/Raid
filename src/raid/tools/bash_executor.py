@@ -15,8 +15,8 @@ class RunBashCommandTool(Tool):
     
     def __init__(self):
         super().__init__()
-        # Set up working directory
-        self.working_dir = Path("/tmp/raid_workspace")
+        # Set up working directory to match the Dockerfile's WORKDIR
+        self.working_dir = Path("/workspace")
         self.working_dir.mkdir(exist_ok=True)
         
         # Allowed commands (whitelist approach for security)
@@ -48,6 +48,10 @@ class RunBashCommandTool(Tool):
             # Development tools
             'git', 'python3', 'pip3', 'node', 'npm', 'yarn',
             'gcc', 'g++', 'make', 'cmake',
+            'java', 'javac', 'mvn', 'gradle',
+            
+            # Package managers (use with caution)
+            'apt-get', 'apt-cache', 'dpkg', 'yum', 'dnf',
             
             # Database tools
             'sqlite3', 'mysql', 'psql',
@@ -74,7 +78,13 @@ class RunBashCommandTool(Tool):
     
     @property
     def description(self) -> str:
-        return "Execute bash commands in a secure Docker environment. Limited to safe commands for file processing, data analysis, and development tasks."
+        return (
+            "Executes a bash command in a secure, isolated Docker environment. "
+            "IMPORTANT: For commands that may produce long outputs (e.g., build scripts, logs), "
+            "you MUST use the 'output_log_file' parameter to save the output to a file. "
+            "Then, use another tool like 'cat' or 'grep' on that file to inspect the results. "
+            "This avoids system errors from overly long outputs."
+        )
     
     @property
     def parameters(self) -> List[ToolParameter]:
@@ -82,7 +92,7 @@ class RunBashCommandTool(Tool):
             ToolParameter(
                 name="command",
                 type="string",
-                description="The bash command to execute"
+                description="The bash command to execute. If expecting long output, use 'output_log_file'."
             ),
             ToolParameter(
                 name="timeout",
@@ -93,6 +103,12 @@ class RunBashCommandTool(Tool):
                 name="working_dir",
                 type="string",
                 description="Working directory for command execution (default: workspace)"
+            ),
+            ToolParameter(
+                name="output_log_file",
+                type="string",
+                description="Optional. If provided, redirects all command output (stdout/stderr) to this file. The tool will return the file path upon completion.",
+                required=False
             )
         ]
     
@@ -101,6 +117,7 @@ class RunBashCommandTool(Tool):
         command = kwargs.get("command", "").strip()
         timeout = min(kwargs.get("timeout", 30), 300)
         working_dir = kwargs.get("working_dir", str(self.working_dir))
+        output_log_file = kwargs.get("output_log_file")
         
         if not command:
             return "Error: Command is required"
@@ -115,7 +132,7 @@ class RunBashCommandTool(Tool):
             return "Security Error: Bash commands can only be executed within Docker containers"
         
         try:
-            result = await self._execute_command_secure(command, timeout, working_dir)
+            result = await self._execute_command_secure(command, timeout, working_dir, output_log_file)
             return result
             
         except Exception as e:
@@ -143,24 +160,8 @@ class RunBashCommandTool(Tool):
             return f"Invalid command syntax: {str(e)}"
         
         # Check for command chaining that might bypass security
-        if any(op in command for op in ['&&', '||', ';', '|']):
-            # Allow simple pipes for data processing
-            if '|' in command and not any(op in command for op in ['&&', '||', ';']):
-                # Validate each command in the pipeline
-                pipeline_commands = command.split('|')
-                for cmd in pipeline_commands:
-                    cmd = cmd.strip()
-                    if cmd:
-                        try:
-                            parsed = shlex.split(cmd)
-                            if parsed:
-                                main_cmd = parsed[0].split('/')[-1]
-                                if main_cmd not in self.allowed_commands:
-                                    return f"Pipeline command '{main_cmd}' is not allowed"
-                        except ValueError:
-                            return "Invalid pipeline syntax"
-            else:
-                return "Command chaining with &&, ||, or ; is not allowed"
+        if any(op in command for op in ['&&', '||', ';']):
+            return "Command chaining with &&, ||, or ; is not allowed"
         
         # Check for output redirection to sensitive locations
         if any(redirect in command for redirect in ['> /etc/', '> /bin/', '> /usr/', '> /var/log/']):
@@ -186,65 +187,71 @@ class RunBashCommandTool(Tool):
             # If we can't determine, assume not in Docker for safety
             return False
     
-    async def _execute_command_secure(self, command: str, timeout: int, working_dir: str) -> str:
+    async def _execute_command_secure(self, command: str, timeout: int, working_dir: str, output_log_file: Optional[str] = None) -> str:
         """Execute command in a secure manner"""
         try:
-            # Validate working directory
-            if not os.path.exists(working_dir):
-                working_dir = str(self.working_dir)
-            
-            # Set up environment with minimal privileges
+            # Resolve the target working directory robustly
+            target_wd = Path(working_dir)
+            if not target_wd.is_absolute():
+                target_wd = self.working_dir.joinpath(target_wd).resolve()
+
+            final_wd = self.working_dir if not target_wd.is_dir() else target_wd
+
+            # Set up environment
             env = {
-                'PATH': '/usr/local/bin:/usr/bin:/bin',
-                'HOME': '/tmp',
-                'USER': 'raid',
-                'SHELL': '/bin/bash',
-                'TERM': 'xterm'
+                'PATH': '/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin',
+                'HOME': '/tmp', 'USER': 'raid', 'LC_ALL': 'C.UTF-8', 'LANG': 'C.UTF-8',
             }
-            
-            # Execute command
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=working_dir,
-                env=env,
-                limit=1024 * 1024  # 1MB output limit
-            )
-            
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=timeout
+
+            # If logging to a file, resolve the path
+            log_path = None
+            if output_log_file:
+                log_path_obj = Path(output_log_file)
+                log_path = final_wd.joinpath(log_path_obj) if not log_path_obj.is_absolute() else log_path_obj
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Create a temporary script to execute
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, dir=str(final_wd), suffix='.sh') as script_file:
+                script_file.write("#!/bin/bash\nset -eo pipefail\n")
+                script_file.write(command + "\n")
+                script_path = script_file.name
+            os.chmod(script_path, 0o755)
+
+            if log_path:
+                # Redirect output to file and wait for completion
+                with open(log_path, 'wb') as log_file:
+                    process = await asyncio.create_subprocess_exec(
+                        script_path, stdout=log_file, stderr=log_file, env=env, cwd=str(final_wd)
+                    )
+                    await asyncio.wait_for(process.wait(), timeout=timeout)
+                os.remove(script_path)
+                
+                if process.returncode == 0:
+                    return f"Command executed successfully. Output saved to: {log_path}"
+                else:
+                    return f"Command failed with exit code {process.returncode}. Full log saved to: {log_path}"
+            else:
+                # Capture output in memory
+                process = await asyncio.create_subprocess_exec(
+                    script_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=str(final_wd)
                 )
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                return f"Command timed out after {timeout} seconds"
-            
-            # Format output
-            result_parts = []
-            
-            if stdout:
-                stdout_text = stdout.decode('utf-8', errors='replace').strip()
-                if stdout_text:
-                    result_parts.append(f"Output:\n{stdout_text}")
-            
-            if stderr:
-                stderr_text = stderr.decode('utf-8', errors='replace').strip()
-                if stderr_text:
-                    result_parts.append(f"Error/Warnings:\n{stderr_text}")
-            
-            if process.returncode != 0:
-                result_parts.append(f"Exit code: {process.returncode}")
-            
-            if not result_parts:
-                result_parts.append("Command executed successfully (no output)")
-            
-            return "\n\n".join(result_parts)
-            
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                os.remove(script_path)
+
+                output = ""
+                if stdout:
+                    output += "Output:\n" + stdout.decode('utf-8', errors='ignore')
+                if stderr:
+                    output += "\nError/Warnings:\n" + stderr.decode('utf-8', errors='ignore')
+                if process.returncode != 0:
+                    output += f"\nExit code: {process.returncode}"
+                
+                return output if output else "Command executed successfully (no output)"
+
+        except asyncio.TimeoutError:
+            return f"Error: Command timed out after {timeout} seconds"
         except Exception as e:
-            return f"Command execution failed: {str(e)}"
+            return f"Execution Error: {str(e)}"
 
 
 class SafeBashExecutor:
